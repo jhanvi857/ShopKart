@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"net/http"
+	"os"
 
 	"github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
@@ -15,12 +16,24 @@ import (
 )
 
 func InitTracer(ctx context.Context, serviceName, instanceID, env, otlpEndpoint string) (*sdktrace.TracerProvider, error) {
+	if os.Getenv("TRACING_ENABLED") == "false" || otlpEndpoint == "" {
+		tp := sdktrace.NewTracerProvider()
+		otel.SetTracerProvider(tp)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+		return tp, nil
+	}
+
 	exporter, err := otlptracehttp.New(ctx,
 		otlptracehttp.WithEndpointURL(otlpEndpoint),
 		otlptracehttp.WithInsecure(),
 	)
 	if err != nil {
-		return nil, err
+		tp := sdktrace.NewTracerProvider()
+		otel.SetTracerProvider(tp)
+		return tp, nil
 	}
 
 	res, err := resource.New(ctx,

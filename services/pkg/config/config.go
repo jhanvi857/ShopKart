@@ -53,6 +53,8 @@ type CommonConfig struct {
 	AdminAPIKey     string
 	OTLPEndpoint    string
 	FaultEndpoints  bool
+	TracingEnabled  bool
+	KafkaEnabled    bool
 	ShutdownTimeout time.Duration
 }
 
@@ -66,6 +68,8 @@ func LoadCommon(serviceName, defaultPort string) CommonConfig {
 		AdminAPIKey:     GetEnv("ADMIN_API_KEY", "shopkart-ops-secret-key-prod-998"),
 		OTLPEndpoint:    GetEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
 		FaultEndpoints:  GetEnvBool("SHOPKART_FAULT_ENDPOINTS", true),
+		TracingEnabled:  GetEnvBool("TRACING_ENABLED", true),
+		KafkaEnabled:    GetEnvBool("KAFKA_ENABLED", true),
 		ShutdownTimeout: 5 * time.Second,
 	}
 }

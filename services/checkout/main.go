@@ -105,15 +105,18 @@ func main() {
 	defer close(stopDBMon)
 	m.MonitorDB(db, "checkout_db", 2*time.Second, stopDBMon)
 
-	kafkaBrokers := []string{config.GetEnv("KAFKA_BROKER", "localhost:9094")}
-	kafkaWriter := &kafka.Writer{
-		Addr:         kafka.TCP(kafkaBrokers...),
-		Topic:        "shopkart-orders",
-		Balancer:     &kafka.LeastBytes{},
-		BatchTimeout: 10 * time.Millisecond,
-		RequiredAcks: kafka.RequireOne,
+	var kafkaWriter *kafka.Writer
+	if cfg.KafkaEnabled {
+		kafkaBrokers := []string{config.GetEnv("KAFKA_BROKER", "localhost:9094")}
+		kafkaWriter = &kafka.Writer{
+			Addr:         kafka.TCP(kafkaBrokers...),
+			Topic:        "shopkart-orders",
+			Balancer:     &kafka.LeastBytes{},
+			BatchTimeout: 10 * time.Millisecond,
+			RequiredAcks: kafka.RequireOne,
+		}
+		defer kafkaWriter.Close()
 	}
-	defer kafkaWriter.Close()
 
 	workerLimit := config.GetEnvInt("CHECKOUT_WORKER_LIMIT", 20)
 
@@ -360,22 +363,24 @@ func (app *CheckoutApp) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:       now,
 	}
 
-	// 7. Publish order placed event to Kafka with W3C tracecontext headers
-	go func(o Order, traceCtx context.Context) {
-		eventData, _ := json.Marshal(o)
-		var headers []kafka.Header
-		tracing.InjectKafkaHeaders(traceCtx, &headers)
+	// 7. Publish order placed event to Kafka with W3C tracecontext headers (if Kafka enabled)
+	if app.kafkaWriter != nil {
+		go func(o Order, traceCtx context.Context) {
+			eventData, _ := json.Marshal(o)
+			var headers []kafka.Header
+			tracing.InjectKafkaHeaders(traceCtx, &headers)
 
-		err := app.kafkaWriter.WriteMessages(context.Background(), kafka.Message{
-			Key:     []byte(o.OrderID),
-			Value:   eventData,
-			Headers: headers,
-			Time:    time.Now(),
-		})
-		if err != nil {
-			slog.Warn("Failed to produce order event to Kafka", slog.String("error", err.Error()))
-		}
-	}(order, ctx)
+			err := app.kafkaWriter.WriteMessages(context.Background(), kafka.Message{
+				Key:     []byte(o.OrderID),
+				Value:   eventData,
+				Headers: headers,
+				Time:    time.Now(),
+			})
+			if err != nil {
+				slog.Warn("Failed to produce order event to Kafka", slog.String("error", err.Error()))
+			}
+		}(order, ctx)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

@@ -61,19 +61,22 @@ func main() {
 	}
 	tracer := otel.GetTracerProvider().Tracer(cfg.ServiceName)
 
-	kafkaBroker := config.GetEnv("KAFKA_BROKER", "localhost:9094")
-	topic := "shopkart-orders"
-	groupID := "shopkart-notifications-group"
+	var reader *kafka.Reader
+	if cfg.KafkaEnabled {
+		kafkaBroker := config.GetEnv("KAFKA_BROKER", "localhost:9094")
+		topic := "shopkart-orders"
+		groupID := "shopkart-notifications-group"
 
-	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:        []string{kafkaBroker},
-		GroupID:        groupID,
-		Topic:          topic,
-		MinBytes:       10e3, // 10KB
-		MaxBytes:       10e6, // 10MB
-		CommitInterval: 1 * time.Second,
-	})
-	defer reader.Close()
+		reader = kafka.NewReader(kafka.ReaderConfig{
+			Brokers:        []string{kafkaBroker},
+			GroupID:        groupID,
+			Topic:          topic,
+			MinBytes:       10e3, // 10KB
+			MaxBytes:       10e6, // 10MB
+			CommitInterval: 1 * time.Second,
+		})
+		defer reader.Close()
+	}
 
 	workerCount := int64(config.GetEnvInt("NOTIFICATION_WORKERS", 2))
 	processDelay := int64(config.GetEnvInt("NOTIFICATION_DELAY_MS", 35))
@@ -90,14 +93,16 @@ func main() {
 	app.configMgr.Set("process_delay_ms", processDelay)
 
 	checker := health.NewChecker()
-	checker.Register("kafka_reader", func(ctx context.Context) error {
-		// Verify reader is active
-		stats := reader.Stats()
-		if stats.Topic == "" {
+	if reader != nil {
+		checker.Register("kafka_reader", func(ctx context.Context) error {
+			// Verify reader is active
+			stats := reader.Stats()
+			if stats.Topic == "" {
+				return nil
+			}
 			return nil
-		}
-		return nil
-	})
+		})
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -127,10 +132,12 @@ func main() {
 		}
 	}()
 
-	// Start Kafka consumer worker loop
-	msgQueue := make(chan kafka.Message, 100)
-	go app.startReaderLoop(ctx, msgQueue)
-	go app.startWorkerPool(ctx, msgQueue)
+	// Start Kafka consumer worker loop (if Kafka enabled)
+	if app.kafkaReader != nil {
+		msgQueue := make(chan kafka.Message, 100)
+		go app.startReaderLoop(ctx, msgQueue)
+		go app.startWorkerPool(ctx, msgQueue)
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
