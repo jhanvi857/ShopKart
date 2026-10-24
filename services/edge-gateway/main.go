@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -102,13 +103,16 @@ func main() {
 	}
 	tracer := otel.GetTracerProvider().Tracer(cfg.ServiceName)
 
-	catalogURL := config.GetEnv("CATALOG_URL", "http://localhost:9001")
-	searchURL := config.GetEnv("SEARCH_URL", "http://localhost:9002")
-	checkoutURL := config.GetEnv("CHECKOUT_URL", "http://localhost:9003")
-	inventoryURL := config.GetEnv("INVENTORY_URL", "http://localhost:9004")
-	paymentsURL := config.GetEnv("PAYMENTS_URL", "http://localhost:9005")
-	cartURL := config.GetEnv("CART_URL", "http://localhost:9006")
-	reviewsURL := config.GetEnv("REVIEWS_URL", "http://localhost:9009")
+	pools := map[string]*ServicePool{
+		"catalog":   NewServicePool(ctx, "catalog", "/api/catalog", parseUpstreamAddrs(config.GetEnv("CATALOG_UPSTREAMS", ""), config.GetEnv("CATALOG_URL", "http://localhost:9001")), tracer),
+		"search":    NewServicePool(ctx, "search", "/api/search", parseUpstreamAddrs(config.GetEnv("SEARCH_UPSTREAMS", ""), config.GetEnv("SEARCH_URL", "http://localhost:9002")), tracer),
+		"cart":      NewServicePool(ctx, "cart", "/api/cart", parseUpstreamAddrs(config.GetEnv("CART_UPSTREAMS", ""), config.GetEnv("CART_URL", "http://localhost:9006")), tracer),
+		"checkout":  NewServicePool(ctx, "checkout", "/api/checkout", parseUpstreamAddrs(config.GetEnv("CHECKOUT_UPSTREAMS", ""), config.GetEnv("CHECKOUT_URL", "http://localhost:9003")), tracer),
+		"orders":    NewServicePool(ctx, "orders", "/api/orders", parseUpstreamAddrs(config.GetEnv("CHECKOUT_UPSTREAMS", ""), config.GetEnv("CHECKOUT_URL", "http://localhost:9003")), tracer),
+		"inventory": NewServicePool(ctx, "inventory", "/api/inventory", parseUpstreamAddrs(config.GetEnv("INVENTORY_UPSTREAMS", ""), config.GetEnv("INVENTORY_URL", "http://localhost:9004")), tracer),
+		"payments":  NewServicePool(ctx, "payments", "/api/payments", parseUpstreamAddrs(config.GetEnv("PAYMENTS_UPSTREAMS", ""), config.GetEnv("PAYMENTS_URL", "http://localhost:9005")), tracer),
+		"reviews":   NewServicePool(ctx, "reviews", "/api/reviews", parseUpstreamAddrs(config.GetEnv("REVIEWS_UPSTREAMS", ""), config.GetEnv("REVIEWS_URL", "http://localhost:9009")), tracer),
+	}
 
 	checker := health.NewChecker()
 
@@ -133,15 +137,68 @@ func main() {
 	r.Get("/readyz", checker.ReadyzHandler())
 	r.Handle("/metrics", m.Handler())
 
+	// Admin endpoints for dynamic upstream management
+	r.Get("/admin/upstreams", func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("X-Admin-Key") != cfg.AdminAPIKey {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		status := make(map[string][]UpstreamInfo)
+		for svc, pool := range pools {
+			status[svc] = pool.GetStatus()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(status)
+	})
+
+	r.Post("/admin/upstreams", func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("X-Admin-Key") != cfg.AdminAPIKey {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		var payload struct {
+			Service  string `json:"service"`
+			Upstream string `json:"upstream"`
+			Action   string `json:"action"` // "add" or "remove"
+		}
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+			http.Error(w, `{"error":"invalid json body"}`, http.StatusBadRequest)
+			return
+		}
+		pool, exists := pools[payload.Service]
+		if !exists {
+			http.Error(w, fmt.Sprintf(`{"error":"unknown service %s"}`, payload.Service), http.StatusNotFound)
+			return
+		}
+		if payload.Action == "remove" {
+			pool.RemoveUpstream(payload.Upstream)
+			if payload.Service == "checkout" {
+				pools["orders"].RemoveUpstream(payload.Upstream)
+			}
+		} else {
+			pool.AddUpstream(payload.Upstream)
+			if payload.Service == "checkout" {
+				pools["orders"].AddUpstream(payload.Upstream)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":   "ok",
+			"service":  payload.Service,
+			"upstream": payload.Upstream,
+			"action":   payload.Action,
+		})
+	})
+
 	// Upstream routes
-	r.Mount("/api/catalog", createProxy(catalogURL, "/api/catalog", tracer))
-	r.Mount("/api/search", createProxy(searchURL, "/api/search", tracer))
-	r.Mount("/api/cart", createProxy(cartURL, "/api/cart", tracer))
-	r.Mount("/api/checkout", createProxy(checkoutURL, "/api/checkout", tracer))
-	r.Mount("/api/orders", createProxy(checkoutURL, "/api/orders", tracer))
-	r.Mount("/api/inventory", createProxy(inventoryURL, "/api/inventory", tracer))
-	r.Mount("/api/payments", createProxy(paymentsURL, "/api/payments", tracer))
-	r.Mount("/api/reviews", createProxy(reviewsURL, "/api/reviews", tracer))
+	r.Mount("/api/catalog", pools["catalog"])
+	r.Mount("/api/search", pools["search"])
+	r.Mount("/api/cart", pools["cart"])
+	r.Mount("/api/checkout", pools["checkout"])
+	r.Mount("/api/orders", pools["orders"])
+	r.Mount("/api/inventory", pools["inventory"])
+	r.Mount("/api/payments", pools["payments"])
+	r.Mount("/api/reviews", pools["reviews"])
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
