@@ -121,7 +121,9 @@ func main() {
 	r.Get("/readyz", checker.ReadyzHandler())
 	r.Handle("/metrics", m.Handler())
 
+	r.Post("/charge", app.handleCharge)
 	r.Post("/payments/charge", app.handleCharge)
+	r.Get("/{orderId}", app.handleGetPayment)
 	r.Get("/payments/{orderId}", app.handleGetPayment)
 
 	// Admin endpoints

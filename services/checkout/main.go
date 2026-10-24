@@ -147,6 +147,7 @@ func main() {
 	r.Get("/readyz", checker.ReadyzHandler())
 	r.Handle("/metrics", m.Handler())
 
+	r.Post("/", app.handleCheckout)
 	r.Post("/checkout", app.handleCheckout)
 	r.Get("/orders/{orderId}", app.handleGetOrder)
 

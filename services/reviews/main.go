@@ -95,7 +95,9 @@ func main() {
 	r.Get("/readyz", checker.ReadyzHandler())
 	r.Handle("/metrics", m.Handler())
 
+	r.Get("/product/{productId}", app.handleGetProductReviews)
 	r.Get("/reviews/product/{productId}", app.handleGetProductReviews)
+	r.Post("/", app.handleCreateReview)
 	r.Post("/reviews", app.handleCreateReview)
 
 	server := &http.Server{

@@ -112,6 +112,9 @@ func main() {
 	r.Handle("/metrics", m.Handler())
 
 	r.Get("/inventory/{productId}", app.handleGetStock)
+	r.Post("/reserve", app.handleReserve)
+	r.Post("/release", app.handleRelease)
+	r.Post("/commit", app.handleCommit)
 	r.Post("/inventory/reserve", app.handleReserve)
 	r.Post("/inventory/release", app.handleRelease)
 	r.Post("/inventory/commit", app.handleCommit)

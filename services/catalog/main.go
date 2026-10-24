@@ -115,6 +115,8 @@ func main() {
 	r.Get("/readyz", checker.ReadyzHandler())
 	r.Handle("/metrics", m.Handler())
 
+	r.Get("/products", app.handleListProducts)
+	r.Get("/products/{id}", app.handleGetProduct)
 	r.Get("/catalog/products", app.handleListProducts)
 	r.Get("/catalog/products/{id}", app.handleGetProduct)
 

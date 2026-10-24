@@ -88,9 +88,13 @@ func main() {
 	r.Get("/readyz", checker.ReadyzHandler())
 	r.Handle("/metrics", m.Handler())
 
+	r.Get("/{cartId}", app.handleGetCart)
 	r.Get("/cart/{cartId}", app.handleGetCart)
+	r.Post("/{cartId}/items", app.handleAddItem)
 	r.Post("/cart/{cartId}/items", app.handleAddItem)
+	r.Delete("/{cartId}/items/{productId}", app.handleRemoveItem)
 	r.Delete("/cart/{cartId}/items/{productId}", app.handleRemoveItem)
+	r.Delete("/{cartId}", app.handleClearCart)
 	r.Delete("/cart/{cartId}", app.handleClearCart)
 
 	server := &http.Server{
