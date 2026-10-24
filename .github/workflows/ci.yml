@@ -31,18 +31,28 @@ jobs:
       - name: Start Datastores & Observability Infrastructure
         run: |
           docker compose up -d
+          echo "Awaiting PostgreSQL readiness..."
+          timeout 30 bash -c 'until docker exec shopkart-postgres pg_isready -U shopkart_user -d shopkart_db; do sleep 2; done'
+          echo "PostgreSQL is ready!"
 
-      - name: Build and Start Backend Services
+      - name: Launch Backend Services
         run: |
-          go build -o bin/shopkart-backend services/main.go
-          ./bin/shopkart-backend &
-          echo "Backend process launched in background"
+          nohup go run services/main.go > backend.log 2>&1 &
+          echo "Backend launcher started with PID $!"
 
       - name: Await Service Readiness
         run: |
           echo "Waiting for edge-gateway to report healthy..."
-          timeout 60 bash -c 'until curl -sf http://localhost:9000/healthz; do sleep 2; done'
-          echo "Edge gateway is online!"
+          for i in {1..30}; do
+            if curl -sf http://localhost:9000/healthz; then
+              echo "Edge-gateway is online and healthy!"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Edge-gateway failed to become healthy. Backend log output:"
+          cat backend.log
+          exit 1
 
       - name: Install k6
         run: |

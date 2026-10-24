@@ -42,13 +42,18 @@ func main() {
 	fmt.Println("  Running services directly on local Go runtime...     ")
 	fmt.Println("======================================================")
 
+	servicesDir := "."
+	if _, err := os.Stat("services/edge-gateway"); err == nil {
+		servicesDir = "services"
+	}
+
 	for _, dir := range serviceDirs {
 		wg.Add(1)
 		go func(s string) {
 			defer wg.Done()
 
 			cmd := exec.CommandContext(ctx, "go", "run", "./"+s)
-			cmd.Dir = "."
+			cmd.Dir = servicesDir
 			cmd.Env = os.Environ()
 
 			stdout, _ := cmd.StdoutPipe()
