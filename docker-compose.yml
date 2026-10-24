@@ -1,0 +1,170 @@
+version: '3.8'
+
+networks:
+  shopkart-network:
+    driver: bridge
+
+volumes:
+  shopkart-pgdata:
+  shopkart-redisdata:
+  shopkart-promdata:
+  shopkart-grafanadata:
+
+services:
+  # -------------------------------------------------------------
+  # Infrastructure Datastores & Message Broker
+  # -------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: shopkart-postgres
+    restart: unless-stopped
+    labels:
+      service: "postgres"
+      tier: "database"
+      team: "data-infra"
+      env: "${ENVIRONMENT:-production}"
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-shopkart_user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-shopkart_pass_secret}"
+      POSTGRES_DB: "${POSTGRES_DB:-shopkart_db}"
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - shopkart-pgdata:/var/lib/postgresql/data
+      - ./deployments/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shopkart_user} -d ${POSTGRES_DB:-shopkart_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shopkart-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: shopkart-redis
+    restart: unless-stopped
+    labels:
+      service: "redis"
+      tier: "cache"
+      team: "data-infra"
+      env: "${ENVIRONMENT:-production}"
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - shopkart-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - shopkart-network
+
+  kafka:
+    image: redpandadata/redpanda:v23.3.11
+    container_name: shopkart-kafka
+    restart: unless-stopped
+    labels:
+      service: "kafka"
+      tier: "messaging"
+      team: "data-infra"
+      env: "${ENVIRONMENT:-production}"
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://localhost:9094
+    ports:
+      - "9094:9092"
+    networks:
+      - shopkart-network
+
+  # -------------------------------------------------------------
+  # Observability Stack
+  # -------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    container_name: shopkart-jaeger
+    restart: unless-stopped
+    labels:
+      service: "jaeger"
+      tier: "observability"
+      team: "platform"
+      env: "${ENVIRONMENT:-production}"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "${JAEGER_PORT:-16686}:16686"
+      - "4317:4317"
+    networks:
+      - shopkart-network
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.98.0
+    container_name: shopkart-otel-collector
+    restart: unless-stopped
+    labels:
+      service: "otel-collector"
+      tier: "observability"
+      team: "platform"
+      env: "${ENVIRONMENT:-production}"
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./deployments/otel/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    ports:
+      - "4318:4318"
+    depends_on:
+      - jaeger
+    networks:
+      - shopkart-network
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: shopkart-prometheus
+    restart: unless-stopped
+    labels:
+      service: "prometheus"
+      tier: "observability"
+      team: "platform"
+      env: "${ENVIRONMENT:-production}"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=24h
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9090"
+    volumes:
+      - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - shopkart-promdata:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - shopkart-network
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: shopkart-grafana
+    restart: unless-stopped
+    labels:
+      service: "grafana"
+      tier: "observability"
+      team: "platform"
+      env: "${ENVIRONMENT:-production}"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./deployments/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployments/grafana/dashboards:/etc/grafana/dashboards:ro
+      - shopkart-grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - shopkart-network
