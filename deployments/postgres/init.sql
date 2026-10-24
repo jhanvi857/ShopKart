@@ -1,5 +1,7 @@
 -- ShopKart Enterprise Indian Retail Database Schema & Initial Seed Data
 
+DROP TABLE IF EXISTS reviews, order_items, payments, orders, inventory, products CASCADE;
+
 CREATE TABLE IF NOT EXISTS products (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -128,7 +130,7 @@ INSERT INTO products (id, name, description, brand, mrp, price, category, rating
 ('gr_03', 'Aashirvaad Shudh Chakki 100% Whole Wheat Atta 10kg', 'Heavy grain stone-ground chakki whole wheat flour retaining dietary fiber and nutrients.', 'Aashirvaad', 510.00, 425.00, 'Grocery & Essentials', 4.6, 38000, 'Weight: 10kg | Ingredients: 100% Whole Wheat | 0% Maida | Fibre Rich', 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=500&auto=format&fit=crop&q=75'),
 ('gr_04', 'Dettol Original Germ Protection Liquid Handwash Refill 1500ml', 'pH-balanced liquid hand soap formulated with pine oil protection against 100 illness-causing germs.', 'Dettol', 320.00, 249.00, 'Grocery & Essentials', 4.5, 19200, 'Volume: 1500ml Refill Pouch | Fragrance: Classic Pine | Formulation: Antibacterial', 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=75'),
 ('gr_05', 'Nescafé Classic 100% Pure Instant Coffee Jar 200g', 'Finely roasted Robusta coffee beans delivering unmistakable signature aroma and flavor.', 'Nescafé', 690.00, 545.00, 'Grocery & Essentials', 4.5, 14800, 'Weight: 200g Glass Jar | Bean: 100% Selected Robusta | Roast: Medium-Dark', 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=500&auto=format&fit=crop&q=75'),
-('gr_06', 'Dabur 100% Pure Squeezy Honey 400g', 'Sourced strictly from Indian beekeepers with zero added sugar and purity certificate.', 'Dabur', 240.00, 185.00, 'Grocery & Essentials', 4.3, 12600, 'Weight: 400g Squeezy Bottle | Purity: NMR Tested | Sugar: No Added Invert Sugar', 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=500&auto=format&fit=crop&q=75'),
+('gr_06', 'Dabur 100% Pure Squeezy Honey 400g', 'Sourced strictly from Indian beekeepers with zero added sugar and purity certificate.', 'Dabur', 240.00, 185.00, 'Grocery & Essentials', 4.3, 12600, 'Weight: 400g Squeezy Bottle | Purity: NMR Tested | Sugar: No Added Invert Sugar', 'https://images.unsplash.com/photo-1587049352851-8d4e89133924?w=500&auto=format&fit=crop&q=75'),
 ('gr_07', 'Surf Excel Matic Top Load Detergent Powder 4kg', 'Enzyme technology engineered to dissolve rapidly in machine wash and tackle stubborn oil stains.', 'Surf Excel', 980.00, 799.00, 'Grocery & Essentials', 4.6, 26400, 'Weight: 4kg Box | Machine Type: Top Load Fully Automatic | Form: Micro Powder', 'https://images.unsplash.com/photo-1610557892470-55d9e80c0bce?w=500&auto=format&fit=crop&q=75'),
 ('gr_08', 'Colgate Total Advanced Health Antibacterial Toothpaste (150g x 2)', 'Dual zinc plus arginine formula offering 12-hour whole mouth antibacterial protection.', 'Colgate', 390.00, 310.00, 'Grocery & Essentials', 4.4, 8900, 'Pack: Twin Pack (300g Total) | Action: Cavity, Plaque & Tartar Defense', 'https://images.unsplash.com/photo-1559591937-e1032338271e?w=500&auto=format&fit=crop&q=75'),
 

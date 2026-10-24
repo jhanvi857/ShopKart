@@ -17,30 +17,26 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache-dependency-path: shopkart/services/go.sum
+          cache-dependency-path: services/go.sum
 
       - name: Run Go Unit Tests
         run: |
-          cd shopkart/services
+          cd services
           go test -v ./...
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Prepare Environment File
         run: |
-          cd shopkart
           cp .env.example .env
 
-      - name: Build All Container Images
+      - name: Start Datastores & Observability Infrastructure
         run: |
-          cd shopkart
-          docker compose build
-
-      - name: Start Full Infrastructure & Services Stack
-        run: |
-          cd shopkart
           docker compose up -d
+
+      - name: Build and Start Backend Services
+        run: |
+          go build -o bin/shopkart-backend services/main.go
+          ./bin/shopkart-backend &
+          echo "Backend process launched in background"
 
       - name: Await Service Readiness
         run: |
@@ -58,13 +54,12 @@ jobs:
 
       - name: Execute Smoke Load Test
         run: |
-          cd shopkart
           k6 run --vus 2 --duration 10s load/baseline.js
 
       - name: Assert Prometheus Metrics Exist
         run: |
           echo "Checking Prometheus metrics endpoint..."
-          curl -sf http://localhost:9091/api/v1/query?query=http_requests_total | grep -q "http_requests_total"
+          curl -sf "http://localhost:9091/api/v1/query?query=http_requests_total" | grep -q "http_requests_total"
           echo "[ASSERT OK] http_requests_total confirmed in Prometheus"
 
       - name: Assert Jaeger Traces Exist
@@ -76,5 +71,4 @@ jobs:
       - name: Teardown Services
         if: always()
         run: |
-          cd shopkart
           docker compose down -v
