@@ -1,0 +1,80 @@
+name: ShopKart CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: shopkart/services/go.sum
+
+      - name: Run Go Unit Tests
+        run: |
+          cd shopkart/services
+          go test -v ./...
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare Environment File
+        run: |
+          cd shopkart
+          cp .env.example .env
+
+      - name: Build All Container Images
+        run: |
+          cd shopkart
+          docker compose build
+
+      - name: Start Full Infrastructure & Services Stack
+        run: |
+          cd shopkart
+          docker compose up -d
+
+      - name: Await Service Readiness
+        run: |
+          echo "Waiting for edge-gateway to report healthy..."
+          timeout 60 bash -c 'until curl -sf http://localhost:9000/healthz; do sleep 2; done'
+          echo "Edge gateway is online!"
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Execute Smoke Load Test
+        run: |
+          cd shopkart
+          k6 run --vus 2 --duration 10s load/baseline.js
+
+      - name: Assert Prometheus Metrics Exist
+        run: |
+          echo "Checking Prometheus metrics endpoint..."
+          curl -sf http://localhost:9091/api/v1/query?query=http_requests_total | grep -q "http_requests_total"
+          echo "[ASSERT OK] http_requests_total confirmed in Prometheus"
+
+      - name: Assert Jaeger Traces Exist
+        run: |
+          echo "Checking Jaeger trace endpoint..."
+          curl -sf "http://localhost:16686/api/traces?service=checkout" | grep -q "data"
+          echo "[ASSERT OK] Traces confirmed in Jaeger"
+
+      - name: Teardown Services
+        if: always()
+        run: |
+          cd shopkart
+          docker compose down -v
