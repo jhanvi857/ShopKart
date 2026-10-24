@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -47,6 +48,8 @@ func main() {
 		servicesDir = "services"
 	}
 
+	loadEnv()
+
 	for _, dir := range serviceDirs {
 		wg.Add(1)
 		go func(s string) {
@@ -54,7 +57,8 @@ func main() {
 
 			cmd := exec.CommandContext(ctx, "go", "run", "./"+s)
 			cmd.Dir = servicesDir
-			cmd.Env = os.Environ()
+			sEnv, procs, mem := getServiceEnv(s)
+			cmd.Env = sEnv
 
 			stdout, _ := cmd.StdoutPipe()
 			stderr, _ := cmd.StderrPipe()
@@ -67,7 +71,7 @@ func main() {
 				log.Printf("[%s] Start error: %v\n", s, err)
 				return
 			}
-			fmt.Printf("[OK] Launched %-18s\n", s)
+			fmt.Printf("[OK] Launched %-18s (GOMAXPROCS=%s, GOMEMLIMIT=%s)\n", s, procs, mem)
 
 			go pipeLog(s, stdout)
 			go pipeLog(s, stderr)
@@ -97,4 +101,63 @@ func pipeLog(prefix string, r io.Reader) {
 	for scanner.Scan() {
 		fmt.Printf("[%s] %s\n", prefix, scanner.Text())
 	}
+}
+
+func loadEnv() {
+	candidates := []string{".env", "../.env", "../../.env"}
+	for _, p := range candidates {
+		if f, err := os.Open(p); err == nil {
+			defer f.Close()
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) == 2 {
+					k := strings.TrimSpace(parts[0])
+					v := strings.TrimSpace(parts[1])
+					if _, exists := os.LookupEnv(k); !exists {
+						_ = os.Setenv(k, v)
+					}
+				}
+			}
+			break
+		}
+	}
+}
+
+func getServiceEnv(s string) ([]string, string, string) {
+	prefix := strings.ToUpper(strings.ReplaceAll(s, "-", "_"))
+	procs := os.Getenv(prefix + "_GOMAXPROCS")
+	if procs == "" {
+		procs = os.Getenv("GOMAXPROCS")
+		if procs == "" {
+			procs = "2"
+		}
+	}
+	mem := os.Getenv(prefix + "_GOMEMLIMIT")
+	if mem == "" {
+		mem = os.Getenv("GOMEMLIMIT")
+		if mem == "" {
+			mem = "256MiB"
+		}
+	}
+
+	envMap := make(map[string]string)
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+	envMap["GOMAXPROCS"] = procs
+	envMap["GOMEMLIMIT"] = mem
+
+	result := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		result = append(result, k+"="+v)
+	}
+	return result, procs, mem
 }
