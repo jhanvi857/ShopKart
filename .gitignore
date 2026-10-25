@@ -13,6 +13,7 @@ build/
 *.exe
 *.test
 *.out
+*.log
 
 # OS & Editor
 .DS_Store
