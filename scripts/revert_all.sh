@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "=== Restoring ShopKart System to Healthy Baseline ==="
 
 echo "1. Reverting crashed containers..."
-"${SCRIPT_DIR}/revert_crash.sh" "shopkart-inventory" || true
+"${SCRIPT_DIR}/revert_crash.sh" "inventory" "9004" || true
 
 echo "2. Reverting cache tier..."
 "${SCRIPT_DIR}/revert_cache_down.sh" || true

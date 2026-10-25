@@ -145,6 +145,6 @@ export function handleSummary(data) {
   console.log('========================================\n');
 
   return {
-    stdout: null,
+    stdout: JSON.stringify(data),
   };
 }

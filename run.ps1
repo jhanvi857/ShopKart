@@ -130,7 +130,8 @@ switch ($Command.ToLower()) {
         Write-Host "[REVERT] Slow queries terminated." -ForegroundColor Green
     }
     "fault-memory" {
-        Invoke-RestMethod -Uri "http://localhost:9005/admin/fault/leak-enable" -Method Post -Headers @{"X-Admin-Key" = "shopkart-ops-secret-key-prod-998"}
+        if ([string]::IsNullOrWhiteSpace($env:ADMIN_API_KEY)) { throw "ADMIN_API_KEY must be set in the environment" }
+        Invoke-RestMethod -Uri "http://127.0.0.1:9005/admin/fault/leak-enable" -Method Post -Headers @{"X-Admin-Key" = $env:ADMIN_API_KEY}
         for ($i=1; $i -le 20; $i++) {
             $body = @{
                 order_id = "ord_leak_$i"
@@ -139,23 +140,24 @@ switch ($Command.ToLower()) {
                 idempotency_key = "ik_leak_$i"
                 card_token = "tok_leak"
             } | ConvertTo-Json
-            Invoke-RestMethod -Uri "http://localhost:9005/payments/charge" -Method Post -ContentType "application/json" -Body $body | Out-Null
+            Invoke-RestMethod -Uri "http://127.0.0.1:9005/payments/charge" -Method Post -ContentType "application/json" -Body $body | Out-Null
         }
         Write-Host "[FAULT] Memory leak triggered in payments service." -ForegroundColor Yellow
     }
     "revert-memory" {
-        Invoke-RestMethod -Uri "http://localhost:9005/admin/fault/leak-disable" -Method Post -Headers @{"X-Admin-Key" = "shopkart-ops-secret-key-prod-998"} | Out-Null
-        Invoke-RestMethod -Uri "http://localhost:9005/admin/fault/leak-clear" -Method Post -Headers @{"X-Admin-Key" = "shopkart-ops-secret-key-prod-998"} | Out-Null
+        if ([string]::IsNullOrWhiteSpace($env:ADMIN_API_KEY)) { throw "ADMIN_API_KEY must be set in the environment" }
+        Invoke-RestMethod -Uri "http://127.0.0.1:9005/admin/fault/leak-disable" -Method Post -Headers @{"X-Admin-Key" = $env:ADMIN_API_KEY} | Out-Null
+        Invoke-RestMethod -Uri "http://127.0.0.1:9005/admin/fault/leak-clear" -Method Post -Headers @{"X-Admin-Key" = $env:ADMIN_API_KEY} | Out-Null
         Write-Host "[REVERT] Memory leak neutralized." -ForegroundColor Green
     }
     "fault-netem" {
         $body = @{ base_latency_ms = 350; jitter_ms = 75 } | ConvertTo-Json
-        Invoke-RestMethod -Uri "http://localhost:9008/admin/config" -Method Post -ContentType "application/json" -Body $body | Out-Null
+        Invoke-RestMethod -Uri "http://127.0.0.1:9008/admin/config" -Method Post -ContentType "application/json" -Body $body | Out-Null
         Write-Host "[FAULT] Injected 350ms link latency into bank mock." -ForegroundColor Yellow
     }
     "revert-netem" {
         $body = @{ base_latency_ms = 35; jitter_ms = 15 } | ConvertTo-Json
-        Invoke-RestMethod -Uri "http://localhost:9008/admin/config" -Method Post -ContentType "application/json" -Body $body | Out-Null
+        Invoke-RestMethod -Uri "http://127.0.0.1:9008/admin/config" -Method Post -ContentType "application/json" -Body $body | Out-Null
         Write-Host "[REVERT] Network delay restored to baseline (35ms)." -ForegroundColor Green
     }
     "revert-all" {
